@@ -5,4 +5,4 @@ app = Flask(__name__) #creating an instance of the flask class, which will be ou
 
 @app.route("/") #define the route home page of the web application.
 def home(): #define a funnction home that will be executed when / is accessed.
-    return "SCA Lab Running" #returning a simple string message "SCA Lab Running" when the home page is accessed.
+    return "SCA Lab Running 2" #returning a simple string message "SCA Lab Running" when the home page is accessed.
