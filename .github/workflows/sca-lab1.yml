@@ -25,4 +25,4 @@ jobs:
             pip install pip-audit #installing pip-audit using pip.
 
         - name: Run SCA Scan #step to run the SCA scan using bandit.
-          run: pip audit #running pip-audit and generating an HTML report of the scan results.
+          run: pip-audit #running pip-audit and generating an HTML report of the scan results.
