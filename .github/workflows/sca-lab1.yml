@@ -1,0 +1,28 @@
+name: SCA - Lab 1 - Detection only #name of the workflow, which will be displayed in the GitHub Actions interface.
+
+on: 
+    push:
+        branches: [ main ] #execute the workflow when a push is made to the main branch.
+    pull_request:
+        branches: [ main ] #execute the workflow when a pull request is made to the main branch.
+
+jobs:
+    sca-scan:
+     runs-on: ubuntu-latest #specify the operating system for the job to run on.
+
+     steps:
+        - name: Checkout code #step to checkout the code from the repository.
+          uses: actions/checkout@v4 #using the checkout action to checkout the code from the repository.
+
+        - name: Set up Python 3.8 #step to set up Python 3.8 environment.
+          uses: actions/setup-python@v2 #using the setup-python action to set up Python environment.
+          with:
+            python-version: 3.8 #specify the version of Python to use.
+
+        - name: Install pip-audit #step to install pip-audit, a tool for auditing Python dependencies for known vulnerabilities.
+          run: |
+            python -m pip install --upgrade pip #upgrading pip to the latest version
+            pip install pip-audit #installing pip-audit using pip.
+
+        - name: Run SCA Scan #step to run the SCA scan using bandit.
+          run: pip audit --output-format=html --output-file=report.html #running pip-audit and generating an HTML report of the scan results.
