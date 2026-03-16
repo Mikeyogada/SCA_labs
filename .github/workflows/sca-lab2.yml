@@ -123,7 +123,7 @@ jobs:
         #upload reports as artifacts
         - name: Upload SCA reports
           if: github.event_name != 'schedule' #only run this step for non-scheduled events (push and pull_request)
-          uses: actions/upload-artifact@v3 #use the upload-artifact action to upload
+          uses: actions/upload-artifact@v4 #use the upload-artifact action to upload
           with:
             name: sca-reports #name of the artifact
             path: reports/ #path to the reports directory
@@ -131,7 +131,7 @@ jobs:
         #Upload nightly reports as artifacts for later review
         - name: Upload nightly SCA reports
           if: github.event_name == 'schedule' #only run this step for scheduled events
-          uses: actions/upload-artifact@v3 #use the upload-artifact action to upload
+          uses: actions/upload-artifact@v4 #use the upload-artifact action to upload
           with:
             name: nightly-sca-reports #name of the artifact
             path: nightly_reports/ #path to the nightly reports directory
