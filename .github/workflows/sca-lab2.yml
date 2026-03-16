@@ -22,6 +22,8 @@ jobs:
       steps:
         - name: Checkout code
           uses: actions/checkout@v3 #checkout the code from the repository
+          with:
+            fetch-depth: 0 #fetch the full history to enable diff-aware scanning for pull requests
 
         - name: Setup Python
           uses: actions/setup-python@v4 #setup python environment
