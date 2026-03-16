@@ -1,0 +1,144 @@
+name: sca-lab2 
+# SCA pipeline stages
+# 1. Manifest validation
+# 2. Diff-aware dependency scan (PR)
+# 3. Full SCA scan before merge
+# 4. Policy enforcement before merge
+# 5. Post-merge verification
+# 6. Nightly vulnerability scan
+
+on:
+  push:
+    branches: [ main ] #trigger the workflow on pushes to the main branch
+  pull_request:
+    branches: [ main, sca-2 ] #trigger the workflow on pull requests to the main and sast branches
+  schedule:
+    - cron: '0 3 * * *' # Schedule the workflow to run daily at 3 AM
+
+jobs:
+    sca:
+      runs-on: ubuntu-latest #use the latest version of ubuntu as the runner environment
+
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v3 #checkout the code from the repository
+
+        - name: Setup Python
+          uses: actions/setup-python@v4 #setup python environment
+          with:
+            python-version: '3.11' #specify the python version to use
+
+        - name: Install tools #install necessary tools for SCA scanning and processing the results
+          run: |
+            python -m pip install --upgrade pip #upgrade pip
+            pip install pip-audit jq #install pip-audit for SCA scanning and jq for processing JSON output
+
+        #manifest enforcement step to check for the presence of manifest files
+        - name: Ensure every service has requirements.txt (manifest file for python projects)
+          run: |
+            for dir in app/services/*; do
+              if [ -d "$dir" ] && [ ! -f "$dir/requirements.txt" ]; then #check if the directory is a service directory and if it does not contain a requirements.txt file
+                echo "Error: $dir does not contain a requirements.txt file."
+                exit 1
+              fi
+            done
+
+        # create a reports directory
+        - name: Create reports directory
+          run: |
+            mkdir -p reports
+            mkdir -p nightly_reports
+        
+        #PR diff-aware policy
+        - name: Run diff-aware SCA scan
+          if: github.event_name == 'pull_request' #only run this step for pull request events
+          run: |
+            git fetch origin main #fetch the latest changes from the main branch to compare with the pull request changes
+            CHANGED_FILES=$(git diff --name-only origin/main...HEAD | grep requirements.txt || true) #get the list of changed files in the pull request and filter for requirements.txt files. If no requirements.txt files are changed, the variable will be empty, so || true is added to prevent the step from failing.
+            
+            #continue with the SCA scan only if there are changed requirements.txt files. If no files are changed, the step will exit successfully without running pip-audit.
+            if [ -z "$CHANGED_FILES" ]; then
+               echo "No dependency changes detected"
+               exit 0
+            fi
+
+            for file in $CHANGED_FILES; do
+              service=$(basename $(dirname "$file")) #get the service name from the directory of the changed requirements.txt file
+              
+              echo "scanning changed dependencies for service: $service"
+
+            #run pip-audit for each changed requirements.txt file 
+              pip-audit -r "$file" --format json > "reports/${service}_sca_report.json" || true #run pip-audit on the changed requirements.txt file and save the report in JSON format. If vulnerabilities are found, the step will not fail due to || true, allowing us to generate the report for review.
+            done
+
+            #check for critical vulnerabilities in the generated reports
+            CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity=="CRITICAL")] | length' reports/*.json 2>/dev/null || echo 0) 
+            #critical vuln identified and counnted across the reports. If no reports then 0 is returned to avoid errors. This allows us to determine if there are any critical vulnerabilities that should block the pull request from being merged.
+
+            echo "Critical vulnerabilities detected: $CRITICAL"
+
+            if [ "$CRITICAL" -gt 0 ]; then
+                echo "Critical vulnerabilities detected in the pull request. Failing the check."
+                exit 1 #fail the check if critical vulnerabilities are found
+            fi
+        
+        #Main branch full SCA scan 
+        - name: Run full SCA scan for all services (generate reports for all services regardless of changes)
+          if: github.event_name == 'push' && github.ref == 'refs/heads/main' #only run this step for push events to the main branch
+          run: |
+            echo "Running full SCA scan for all services..." #print a message to indicate the start of the full SCA scan
+
+            for file in $(find app/services -name "requirements.txt"); do
+              service_name=$(basename "$(dirname "$file")") #get the service name from the directory name
+
+              pip-audit -r "$file" --format json > "reports/${service_name}_sca_report.json" || true #run pip-audit on the requirements.txt file and save the report in JSON format
+            done #if true is not added, the step will fail if pip-audit finds any vulnerabilities. Adding || true allows the step to continue even if vulnerabilities are found, which is useful for generating reports without failing the workflow.
+            
+            #check for high and critical vulnerabilities in the generated reports
+            HIGH_CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity=="HIGH" or .severity=="CRITICAL")] | length' reports/*.json 2>/dev/null || echo 0) 
+            #high and critical vulnerabilities identified and counted across the reports. If no reports then 0 is returned to avoid errors. This allows us to determine if there are any high or critical vulnerabilities that should block the push to the main branch.  
+
+            echo "High and Critical vulnerabilities detected: $HIGH_CRITICAL"
+
+            #count the number of high and critical vulnerabilities and fail the check if any are found
+            if [ "$HIGH_CRITICAL" -gt 0 ]; then
+                echo "High or critical vulnerabilities detected in the main branch. Failing the check."
+                exit 1 #fail the check if high or critical vulnerabilities are found
+            fi
+        #nightly SCA Scan
+        #this step is similar to the main branch SCA scan, but it runs on a schedule (daily at 3 AM) and it generates separate reports for each service. The reports are then uploaded as artifacts for later review. The check for high and critical vulnerabilities can be adjusted based on the organization's risk tolerance and policies.
+        - name: Run nightly SCA scan
+          if: github.event_name == 'schedule' #only run this step for scheduled events
+          run: |
+            echo "Running nightly dependency scan for all services..." #print a message to indicate the start of the nightly SCA scan
+
+            for file in $(find app/services -name "requirements.txt"); do #loop through all the requirements.txt files in the app/services directory
+              service_name=$(basename "$(dirname "$file")") #get the service name from the directory name
+              
+              pip-audit -r "$file" --format json > "nightly_reports/${service_name}_nightly_sca_report.json" || true #run pip-audit on the requirements.txt file and save the report in JSON format
+            done
+
+            echo "Nightly SCA scan completed. Reports generated in the nightly_reports directory."
+        
+        #upload reports as artifacts
+        - name: Upload SCA reports
+          if: github.event_name != 'schedule' #only run this step for non-scheduled events (push and pull_request)
+          uses: actions/upload-artifact@v3 #use the upload-artifact action to upload
+          with:
+            name: sca-reports #name of the artifact
+            path: reports/ #path to the reports directory
+
+        #Upload nightly reports as artifacts for later review
+        - name: Upload nightly SCA reports
+          if: github.event_name == 'schedule' #only run this step for scheduled events
+          uses: actions/upload-artifact@v3 #use the upload-artifact action to upload
+          with:
+            name: nightly-sca-reports #name of the artifact
+            path: nightly_reports/ #path to the nightly reports directory
+
+        #step to show which manifest were scanned in the workflow run
+        - name: Show scanned manifest files
+          run: |
+            echo "Scanned manifest files:" #print a message to indicate the scanned manifest files
+            find app/services -name "requirements.txt" #list all the requirements.txt files that were
+        
