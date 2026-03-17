@@ -1,104 +1,144 @@
-name: sca-lab2 
+name: sca-lab2
+
 # SCA pipeline stages
 # 1. Manifest validation
 # 2. Diff-aware dependency scan (PR)
-# 3. Full SCA scan before merge
+# 3. Full SCA scan before merge (PR safety net)
 # 4. Policy enforcement before merge
 # 5. Post-merge verification
 # 6. Nightly vulnerability scan
 
 on:
   push:
-    branches: [ main ] #trigger the workflow on pushes to the main branch
+    branches: [ main ]
   pull_request:
-    branches: [ main, sca-2 ] #trigger the workflow on pull requests to the main and sast branches
+    branches: [ main, sca-2 ]
   schedule:
-    - cron: '0 3 * * *' # Schedule the workflow to run daily at 3 AM
+    - cron: '0 3 * * *'
+
+permissions:
+  contents: read
 
 jobs:
-    sca:
-      runs-on: ubuntu-latest #use the latest version of ubuntu as the runner environment
+  sca:
+    runs-on: ubuntu-latest
 
-      steps:
-        - name: Checkout code
-          uses: actions/checkout@v3 #checkout the code from the repository
+    steps:
+# -----------------------------------
+# Setup
+# -----------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-        - name: Setup Python
-          uses: actions/setup-python@v4 #setup python environment
-          with:
-            python-version: '3.11' #specify the python version to use
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
-        - name: Install tools #install necessary tools for SCA scanning and processing the results
-          run: |
-            python -m pip install --upgrade pip #upgrade pip
-            pip install pip-audit jq #install pip-audit for SCA scanning and jq for processing JSON output
+      - name: Install tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit jq
 
-        #manifest enforcement step to check for the presence of manifest files
-        - name: Ensure every service has requirements.txt (manifest file for python projects)
-          run: |
-            for dir in app/services/*; do
-              if [ -d "$dir" ] && [ ! -f "$dir/requirements.txt" ]; then #check if the directory is a service directory and if it does not contain a requirements.txt file
-                echo "Error: $dir does not contain a requirements.txt file."
-                exit 1
-              fi
-            done
-
-        # create a reports directory
-        - name: Create reports directory
-          run: |
-            mkdir -p reports
-            mkdir -p nightly_reports
-        
-        #PR diff-aware policy
-        - name: Run diff-aware SCA scan
-          if: github.event_name == 'pull_request' #only run this step for pull request events
-          run: |
-            git fetch origin main #fetch the latest changes from the main branch to compare with the pull request changes
-            CHANGED_FILES=$(git diff --name-only origin/main...HEAD | grep requirements.txt || true) #get the list of changed files in the pull request and filter for requirements.txt files. If no requirements.txt files are changed, the variable will be empty, so || true is added to prevent the step from failing.
-            
-            #continue with the SCA scan only if there are changed requirements.txt files. If no files are changed, the step will exit successfully without running pip-audit.
-            if [ -z "$CHANGED_FILES" ]; then
-               echo "No dependency changes detected"
-               exit 0
+# -----------------------------------
+# 1. Manifest validation
+# -----------------------------------
+      - name: Ensure every service has requirements.txt
+        run: |
+          for dir in app/services/*; do
+            if [ -d "$dir" ] && [ ! -f "$dir/requirements.txt" ]; then
+              echo "Error: $dir missing requirements.txt"
+              exit 1
             fi
+          done
 
+# -----------------------------------
+# Prepare directories
+# -----------------------------------
+      - name: Create report directories
+        run: |
+          mkdir -p reports nightly_reports
+
+# -----------------------------------
+# 2. Diff-aware scan (PR)
+# -----------------------------------
+      - name: Diff-aware SCA scan
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin main
+          CHANGED_FILES=$(git diff --name-only origin/main...HEAD | grep requirements.txt || true)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No dependency changes detected"
+          else
             for file in $CHANGED_FILES; do
-              service=$(basename $(dirname "$file")) #get the service name from the directory of the changed requirements.txt file
-              
-              echo "scanning changed dependencies for service: $service"
+              service=$(basename $(dirname "$file"))
 
-            #run pip-audit for each changed requirements.txt file 
-              pip-audit -r "$file" --format json > "reports/${service}_sca_report.json" || true #run pip-audit on the changed requirements.txt file and save the report in JSON format. If vulnerabilities are found, the step will not fail due to || true, allowing us to generate the report for review.
+              echo "Scanning changed dependencies for $service"
+
+              pip-audit -r "$file" --format json > "reports/${service}_diff.json" || true
+
+              echo "----- Diff Report: $service -----"
+              jq '.dependencies[] | {name: .name, vulns: (.vulns | length)}' \
+                "reports/${service}_diff.json" 2>/dev/null || echo "No vulns"
             done
+          fi
 
-            #check for critical vulnerabilities in the generated reports
-            CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity=="CRITICAL")] | length' reports/*.json 2>/dev/null || echo 0) 
-            #critical vuln identified and counnted across the reports. If no reports then 0 is returned to avoid errors. This allows us to determine if there are any critical vulnerabilities that should block the pull request from being merged.
+# -----------------------------------
+# 3. Full scan (PR safety net)
+# -----------------------------------
+      - name: Full SCA scan (PR safety net)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Running full SCA scan..."
 
-            echo "Critical vulnerabilities detected: $CRITICAL"
+          for file in $(find app/services -name "requirements.txt"); do
+            service=$(basename "$(dirname "$file")")
 
-            if [ "$CRITICAL" -gt 0 ]; then
-                echo "Critical vulnerabilities detected in the pull request. Failing the check."
-                exit 1 #fail the check if critical vulnerabilities are found
-            fi
-        
-        #Main branch full SCA scan 
-        - name: Run full SCA scan for all services (generate reports for all services regardless of changes)
-          if: github.event_name == 'push' && github.ref == 'refs/heads/main' #only run this step for push events to the main branch
-          run: |
-            echo "Running full SCA scan for all services..." #print a message to indicate the start of the full SCA scan
+            pip-audit -r "$file" --format json > "reports/${service}_full.json" || true
+          done
 
-            for file in $(find app/services -name "requirements.txt"); do
-              service_name=$(basename "$(dirname "$file")") #get the service name from the directory name
+# -----------------------------------
+# 4. Policy enforcement (PR gate)
+# -----------------------------------
+      - name: Enforce vulnerability policy
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Evaluating vulnerability policy..."
 
-              pip-audit -r "$file" --format json > "reports/${service_name}_sca_report.json" || true #run pip-audit on the requirements.txt file and save the report in JSON format
-            done #if true is not added, the step will fail if pip-audit finds any vulnerabilities. Adding || true allows the step to continue even if vulnerabilities are found, which is useful for generating reports without failing the workflow.
-            
-            #check for high and critical vulnerabilities in the generated reports
-            HIGH_CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity=="HIGH" or .severity=="CRITICAL")] | length' reports/*.json 2>/dev/null || echo 0) 
-            #high and critical vulnerabilities identified and counted across the reports. If no reports then 0 is returned to avoid errors. This allows us to determine if there are any high or critical vulnerabilities that should block the push to the main branch.  
+          echo "----- Combined Summary -----"
+          jq '.dependencies[] | {package: .name, vulnerabilities: (.vulns | length)}' reports/*.json || true
 
-            echo "High and Critical vulnerabilities detected: $HIGH_CRITICAL"
+          CRITICAL=$(jq '[.dependencies[].vulns[]? | select(.severity=="critical")] | length' reports/*.json 2>/dev/null || echo 0)
+
+          echo "Critical vulnerabilities: $CRITICAL"
+
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "Blocking PR due to critical vulnerabilities"
+            exit 1
+          fi
+
+# -----------------------------------
+# 5. Post-merge verification (main)
+# -----------------------------------
+      - name: Post-merge SCA verification
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "Running post-merge verification..."
+
+          git diff HEAD~1 HEAD -- app/services/*/requirements.txt || true
+
+          for file in $(find app/services -name "requirements.txt"); do
+            service=$(basename "$(dirname "$file")")
+
+            pip-audit -r "$file" --format json > "reports/${service}_post.json" || true
+          done
+
+          HIGH_CRITICAL=$(jq '[.dependencies[].vulns[]? | select(.severity=="high" or .severity=="critical")] | length' reports/*.json 2>/dev/null || echo 0)
+
+          echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
 
             #count the number of high and critical vulnerabilities and fail the check if any are found
             if [ "$HIGH_CRITICAL" -gt 0 ]; then
@@ -142,3 +182,49 @@ jobs:
             echo "Scanned manifest files:" #print a message to indicate the scanned manifest files
             find app/services -name "requirements.txt" #list all the requirements.txt files that were
         
+
+          if [ "$HIGH_CRITICAL" -gt 0 ]; then
+            echo "Post-merge risk detected"
+            exit 1
+          fi
+
+# -----------------------------------
+# 6. Nightly scan
+# -----------------------------------
+      - name: Nightly SCA scan
+        if: github.event_name == 'schedule'
+        run: |
+          echo "Running nightly scan..."
+
+          for file in $(find app/services -name "requirements.txt"); do
+            service=$(basename "$(dirname "$file"))
+
+            pip-audit -r "$file" --format json > "nightly_reports/${service}.json" || true
+          done
+
+          jq '[.dependencies[].vulns[]?.id]' nightly_reports/*.json > nightly_reports/current_vulns.json
+
+# -----------------------------------
+# Artifacts
+# -----------------------------------
+      - name: Upload reports
+        if: github.event_name != 'schedule'
+        uses: actions/upload-artifact@v3
+        with:
+          name: sca-reports
+          path: reports/
+
+      - name: Upload nightly reports
+        if: github.event_name == 'schedule'
+        uses: actions/upload-artifact@v3
+        with:
+          name: nightly-sca-reports
+          path: nightly_reports/
+
+# -----------------------------------
+# Visibility
+# -----------------------------------
+      - name: Show scanned manifests
+        run: |
+          echo "Scanned manifest files:"
+          find app/services -name "requirements.txt"
