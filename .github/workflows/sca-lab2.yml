@@ -140,51 +140,8 @@ jobs:
 
           echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
 
-            #count the number of high and critical vulnerabilities and fail the check if any are found
-            if [ "$HIGH_CRITICAL" -gt 0 ]; then
-                echo "High or critical vulnerabilities detected in the main branch. Failing the check."
-                exit 1 #fail the check if high or critical vulnerabilities are found
-            fi
-        #nightly SCA Scan
-        #this step is similar to the main branch SCA scan, but it runs on a schedule (daily at 3 AM) and it generates separate reports for each service. The reports are then uploaded as artifacts for later review. The check for high and critical vulnerabilities can be adjusted based on the organization's risk tolerance and policies.
-        - name: Run nightly SCA scan
-          if: github.event_name == 'schedule' #only run this step for scheduled events
-          run: |
-            echo "Running nightly dependency scan for all services..." #print a message to indicate the start of the nightly SCA scan
-
-            for file in $(find app/services -name "requirements.txt"); do #loop through all the requirements.txt files in the app/services directory
-              service_name=$(basename "$(dirname "$file")") #get the service name from the directory name
-              
-              pip-audit -r "$file" --format json > "nightly_reports/${service_name}_nightly_sca_report.json" || true #run pip-audit on the requirements.txt file and save the report in JSON format
-            done
-
-            echo "Nightly SCA scan completed. Reports generated in the nightly_reports directory."
-        
-        #upload reports as artifacts
-        - name: Upload SCA reports
-          if: github.event_name != 'schedule' #only run this step for non-scheduled events (push and pull_request)
-          uses: actions/upload-artifact@v4 #use the upload-artifact action to upload
-          with:
-            name: sca-reports #name of the artifact
-            path: reports/ #path to the reports directory
-
-        #Upload nightly reports as artifacts for later review
-        - name: Upload nightly SCA reports
-          if: github.event_name == 'schedule' #only run this step for scheduled events
-          uses: actions/upload-artifact@v4 #use the upload-artifact action to upload
-          with:
-            name: nightly-sca-reports #name of the artifact
-            path: nightly_reports/ #path to the nightly reports directory
-
-        #step to show which manifest were scanned in the workflow run
-        - name: Show scanned manifest files
-          run: |
-            echo "Scanned manifest files:" #print a message to indicate the scanned manifest files
-            find app/services -name "requirements.txt" #list all the requirements.txt files that were
-        
-
           if [ "$HIGH_CRITICAL" -gt 0 ]; then
-            echo "Post-merge risk detected"
+            echo "High or critical vulnerabilities detected in the main branch. Failing the check."
             exit 1
           fi
 
