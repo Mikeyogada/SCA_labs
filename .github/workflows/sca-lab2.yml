@@ -162,7 +162,7 @@ jobs:
           jq '[.dependencies[].vulns[]?.id]' nightly_reports/*.json > nightly_reports/current_vulns.json
 
 # -----------------------------------
-# Artifacts
+# Artifacts and visibility
 # -----------------------------------
       - name: Upload reports
         if: github.event_name != 'schedule'
