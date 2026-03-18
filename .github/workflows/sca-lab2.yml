@@ -1,6 +1,6 @@
 name: sca-lab2
 
-# SCA pipeline stages
+# SCA pipeline stage
 # 1. Manifest validation
 # 2. Diff-aware dependency scan (PR)
 # 3. Full SCA scan before merge (PR safety net)
