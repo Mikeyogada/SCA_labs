@@ -1,6 +1,6 @@
 name: sca-lab2
 
-# SCA pipeline stage
+# SCA pipeline stages
 # 1. Manifest validation
 # 2. Diff-aware dependency scan (PR)
 # 3. Full SCA scan before merge (PR safety net)
@@ -111,12 +111,12 @@ jobs:
           echo "----- Combined Summary -----"
           jq '.dependencies[] | {package: .name, vulnerabilities: (.vulns | length)}' reports/*.json || true
 
-          CRITICAL=$(jq '[.dependencies[].vulns[]? | select(.severity=="critical")] | length' reports/*.json 2>/dev/null || echo 0)
+          HIGH_CRITICAL=$(jq -s '[.[].dependencies[].vulns[]? | select(.severity=="high" or .severity=="critical")] | length' reports/*.json 2>/dev/null || echo 0)
 
-          echo "Critical vulnerabilities: $CRITICAL"
+          echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
 
-          if [ "$CRITICAL" -gt 0 ]; then
-            echo "Blocking PR due to critical vulnerabilities"
+          if [ "$HIGH_CRITICAL" -gt 0 ]; then
+            echo "Blocking PR due to high or critical vulnerabilities"
             exit 1
           fi
 
@@ -136,7 +136,7 @@ jobs:
             pip-audit -r "$file" --format json > "reports/${service}_post.json" || true
           done
 
-          HIGH_CRITICAL=$(jq '[.dependencies[].vulns[]? | select(.severity=="high" or .severity=="critical")] | length' reports/*.json 2>/dev/null || echo 0)
+          HIGH_CRITICAL=$(jq -s '[.[].dependencies[].vulns[]? | select(.severity=="high" or .severity=="critical")] | length' reports/*.json 2>/dev/null || echo 0)
 
           echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
 
@@ -146,7 +146,7 @@ jobs:
           fi
 
 # -----------------------------------
-# 6. Nightly scan
+# 6. Nightly scan (done on schedule)
 # -----------------------------------
       - name: Nightly SCA scan
         if: github.event_name == 'schedule'
@@ -154,7 +154,7 @@ jobs:
           echo "Running nightly scan..."
 
           for file in $(find app/services -name "requirements.txt"); do
-            service=$(basename "$(dirname "$file"))
+            service=$(basename "$(dirname "$file")")
 
             pip-audit -r "$file" --format json > "nightly_reports/${service}.json" || true
           done
@@ -162,18 +162,18 @@ jobs:
           jq '[.dependencies[].vulns[]?.id]' nightly_reports/*.json > nightly_reports/current_vulns.json
 
 # -----------------------------------
-# Artifacts and visibility
+# Artifacts
 # -----------------------------------
       - name: Upload reports
         if: github.event_name != 'schedule'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: sca-reports
           path: reports/
 
       - name: Upload nightly reports
         if: github.event_name == 'schedule'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: nightly-sca-reports
           path: nightly_reports/
