@@ -111,12 +111,12 @@ jobs:
           echo "----- Combined Summary -----"
           jq '.dependencies[] | {package: .name, vulnerabilities: (.vulns | length)}' reports/*.json || true
 
-          CRITICAL=$(jq '[.dependencies[].vulns[]? | select(.severity=="critical")] | length' reports/*.json 2>/dev/null || echo 0)
+          HIGH_CRITICAL=$(jq -s '[.[].dependencies[].vulns[]? | select(.severity=="high" or .severity=="critical")] | length' reports/*.json 2>/dev/null || echo 0)
 
-          echo "Critical vulnerabilities: $CRITICAL"
+          echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
 
-          if [ "$CRITICAL" -gt 0 ]; then
-            echo "Blocking PR due to critical vulnerabilities"
+          if [ "$HIGH_CRITICAL" -gt 0 ]; then
+            echo "Blocking PR due to High and critical vulnerabilities"
             exit 1
           fi
 
@@ -136,7 +136,7 @@ jobs:
             pip-audit -r "$file" --format json > "reports/${service}_post.json" || true
           done
 
-          HIGH_CRITICAL=$(jq '[.dependencies[].vulns[]? | select(.severity=="high" or .severity=="critical")] | length' reports/*.json 2>/dev/null || echo 0)
+          HIGH_CRITICAL=$(jq -s '[.[].dependencies[].vulns[]? | select(.severity=="high" or .severity=="critical")] | length' reports/*.json 2>/dev/null || echo 0)
 
           echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
 
@@ -159,7 +159,7 @@ jobs:
             pip-audit -r "$file" --format json > "nightly_reports/${service}.json" || true
           done
 
-          jq '[.dependencies[].vulns[]?.id]' nightly_reports/*.json > nightly_reports/current_vulns.json
+          jq -s '[.[].dependencies[].vulns[]?.id] | unique' nightly_reports/*.json > nightly_reports/current_vulns.json
 
 # -----------------------------------
 # Artifacts and visibility
