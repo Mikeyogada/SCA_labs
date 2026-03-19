@@ -1,5 +1,6 @@
 name: sca-lab2
 
+
 # SCA pipeline stages
 # 1. Manifest validation - no scanning
 # 2. Diff-aware dependency scan (PR) - pip-audit only on changed dependencies
@@ -8,191 +9,226 @@ name: sca-lab2
 # 5. Post-merge verification - trivy
 # 6. Nightly vulnerability scan - pip-audit and trivy
 
+
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main]
-  schedule:
-    - cron: '0 3 * * *'
+ push:
+   branches: [ main ]
+ pull_request:
+   branches: [ main]
+ schedule:
+   - cron: '0 3 * * *'
+
 
 permissions:
-  contents: read
+ contents: read
+
 
 jobs:
-  sca:
-    runs-on: ubuntu-latest
+ sca:
+   runs-on: ubuntu-latest
 
-    steps:
+
+   steps:
 # -----------------------------------
 # Setup
 # -----------------------------------
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+     - name: Checkout code
+       uses: actions/checkout@v3
+       with:
+         fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
 
-      - name: Install tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install pip-audit jq
+     - name: Setup Python
+       uses: actions/setup-python@v4
+       with:
+         python-version: '3.11'
 
-          #install trivy for future use
-          sudo apt-get update
-          sudo apt-get install -y wget
-          TRIVY_VERSION=0.50.1
-          wget https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb
-          sudo dpkg -i trivy_${TRIVY_VERSION}_Linux-64bit.deb
 
-      - name: prepare trivy db
-        run: trivy fs --download-db-only
+     - name: Install tools
+       run: |
+         python -m pip install --upgrade pip
+         pip install pip-audit jq
+
+
+         #install trivy for future use
+         sudo apt-get update
+         sudo apt-get install -y wget
+         TRIVY_VERSION=0.50.1
+         wget https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb
+         sudo dpkg -i trivy_${TRIVY_VERSION}_Linux-64bit.deb
+
+
+     - name: prepare trivy db
+       run: trivy fs --download-db-only
+
 
 # -----------------------------------
 # 1. Manifest validation
 # -----------------------------------
-      - name: Ensure every service has requirements.txt
-        run: |
-          for dir in app/services/*; do
-            if [ -d "$dir" ] && [ ! -f "$dir/requirements.txt" ]; then
-              echo "Error: $dir missing requirements.txt"
-              exit 1
-            fi
-          done
+     - name: Ensure every service has requirements.txt
+       run: |
+         for dir in app/services/*; do
+           if [ -d "$dir" ] && [ ! -f "$dir/requirements.txt" ]; then
+             echo "Error: $dir missing requirements.txt"
+             exit 1
+           fi
+         done
+
 
 # -----------------------------------
 # Prepare directories
 # -----------------------------------
-      - name: Create report directories
-        run: |
-          mkdir -p reports nightly_reports
+     - name: Create report directories
+       run: |
+         mkdir -p reports nightly_reports
+
 
 # -----------------------------------
 # 2. Diff-aware scan (PR)
 # -----------------------------------
-      - name: Diff-aware SCA scan
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch origin main
-          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep "requirements.txt$" || true)
+     - name: Diff-aware SCA scan
+       if: github.event_name == 'pull_request'
+       run: |
+         git fetch origin main
+         CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep "requirements.txt$" || true)
 
-          if [ -z "$CHANGED_FILES" ]; then
-            echo "No dependency changes detected"
-          else
-            for file in $CHANGED_FILES; do
-              service=$(basename $(dirname "$file"))
 
-              echo "Scanning changed dependencies for $service"
+         if [ -z "$CHANGED_FILES" ]; then
+           echo "No dependency changes detected"
+         else
+           for file in $CHANGED_FILES; do
+             service=$(basename $(dirname "$file"))
 
-              pip-audit -r "$file" --format json > "reports/${service}_diff.json" || true
 
-            done
-          fi
+             echo "Scanning changed dependencies for $service"
+
+
+             pip-audit -r "$file" --format json > "reports/${service}_diff.json" || true
+
+
+           done
+         fi
+
 
 # -----------------------------------
 # 3. Full scan (PR safety net) (pip-audit+trivy)
 # -----------------------------------
-      - name: Full SCA scan (PR safety net)
-        if: github.event_name == 'pull_request'
-        run: |
-          echo "Running full pip audit scan..."
+     - name: Full SCA scan (PR safety net)
+       if: github.event_name == 'pull_request'
+       run: |
+         echo "Running full pip audit scan..."
 
-          for file in $(find app/services -name "requirements.txt"); do
-            service=$(basename "$(dirname "$file")")
 
-            pip-audit -r "$file" --format json > "reports/${service}_full.json" || true
-          done
+         for file in $(find app/services -name "requirements.txt"); do
+           service=$(basename "$(dirname "$file")")
 
-          echo "Running Trivy scan..."
-          trivy fs --format json --output "reports/trivy.json" . || {
-            echo "Trivy scan failed"
-            exit 1
-          }
+
+           pip-audit -r "$file" --format json > "reports/${service}_full.json" || true
+         done
+
+
+         echo "Running Trivy scan..."
+         trivy fs --format json --output "reports/trivy.json" . || {
+           echo "Trivy scan failed"
+           exit 1
+         }
+
 
 # -----------------------------------
 # 4. Policy enforcement (PR gate)
 # -----------------------------------
-      - name: Enforce vulnerability policy
-        if: github.event_name == 'pull_request'
-        run: |
-          echo "Evaluating vulnerability policy..."
+     - name: Enforce vulnerability policy
+       if: github.event_name == 'pull_request'
+       run: |
+         echo "Evaluating vulnerability policy..."
 
-          HIGH_CRITICAL=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/trivy.json 2>/dev/null || echo 0)
 
-          echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
+         HIGH_CRITICAL=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/trivy.json 2>/dev/null || echo 0)
 
-          if [ "$HIGH_CRITICAL" -gt 0 ]; then
-            echo "Blocking PR due to high or critical vulnerabilities"
-            exit 1
-          fi
+
+         echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
+
+
+         if [ "$HIGH_CRITICAL" -gt 0 ]; then
+           echo "Blocking PR due to high or critical vulnerabilities"
+           exit 1
+         fi
+
 
 # -----------------------------------
 # 5. Post-merge verification (main) - Trivy
 # -----------------------------------
-      - name: Post-merge SCA verification
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          echo "Running post-merge verification..."
+     - name: Post-merge SCA verification
+       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+       run: |
+         echo "Running post-merge verification..."
 
-          trivy fs --format json --output "reports/post_merge_trivy.json" . || {
-            echo "Trivy scan failed"
-            exit 1
-          }
 
-          HIGH_CRITICAL=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/post_merge_trivy.json 2>/dev/null || echo 0)
+         trivy fs --format json --output "reports/post_merge_trivy.json" . || {
+           echo "Trivy scan failed"
+           exit 1
+         }
 
-          echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
 
-          if [ "$HIGH_CRITICAL" -gt 0 ]; then
-            echo "High or critical vulnerabilities detected in the main branch. Failing the check."
-            exit 1
-          fi
+         HIGH_CRITICAL=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/post_merge_trivy.json 2>/dev/null || echo 0)
+
+
+         echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
+
+
+         if [ "$HIGH_CRITICAL" -gt 0 ]; then
+           echo "High or critical vulnerabilities detected in the main branch. Failing the check."
+           exit 1
+         fi
+
 
 # -----------------------------------
 # 6. Nightly scan - Trivy + pip-audit
 # -----------------------------------
-      - name: Nightly SCA scan
-        if: github.event_name == 'schedule'
-        run: |
-          echo "Running nightly scan..."
+     - name: Nightly SCA scan
+       if: github.event_name == 'schedule'
+       run: |
+         echo "Running nightly scan..."
 
-          for file in $(find app/services -name "requirements.txt"); do
-            service=$(basename "$(dirname "$file")")
 
-            pip-audit -r "$file" --format json > "nightly_reports/${service}.json" || true
-          done
+         for file in $(find app/services -name "requirements.txt"); do
+           service=$(basename "$(dirname "$file")")
 
-          echo "Running nightly Trivy scan..."
-          trivy fs --format json --output "nightly_reports/trivy.json" . || {
-            echo "Trivy scan failed"
-            exit 1
-          } 
+
+           pip-audit -r "$file" --format json > "nightly_reports/${service}.json" || true
+         done
+
+
+         echo "Running nightly Trivy scan..."
+         trivy fs --format json --output "nightly_reports/trivy.json" . || {
+           echo "Trivy scan failed"
+           exit 1
+         }
 # -----------------------------------
 # Artifacts
 # -----------------------------------
-      - name: Upload reports
-        if: github.event_name != 'schedule'
-        uses: actions/upload-artifact@v4
-        with:
-          name: sca-reports
-          path: reports/
+     - name: Upload reports
+       if: github.event_name != 'schedule'
+       uses: actions/upload-artifact@v4
+       with:
+         name: sca-reports
+         path: reports/
 
-      - name: Upload nightly reports
-        if: github.event_name == 'schedule'
-        uses: actions/upload-artifact@v4
-        with:
-          name: nightly-sca-reports
-          path: nightly_reports/
+
+     - name: Upload nightly reports
+       if: github.event_name == 'schedule'
+       uses: actions/upload-artifact@v4
+       with:
+         name: nightly-sca-reports
+         path: nightly_reports/
+
 
 # -----------------------------------
 # Visibility
 # -----------------------------------
-      - name: Show scanned manifests
-        if: always() #always show this step even if pipeline fails
-        run: |
-          echo "Scanned manifest files:"
-          find app/services -name "requirements.txt"
+     - name: Show scanned manifests
+       if: always() #always show this step even if pipeline fails
+       run: |
+         echo "Scanned manifest files:"
+         find app/services -name "requirements.txt"
+
