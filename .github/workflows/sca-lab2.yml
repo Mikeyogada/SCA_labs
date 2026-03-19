@@ -8,8 +8,7 @@ name: sca-lab2
 # 4. Policy enforcement before merge - trivy
 # 5. Post-merge verification - trivy
 # 6. Nightly vulnerability scan - pip-audit and trivy
-
-
+#changes done on the workflow
 on:
  push:
    branches: [ main ]
