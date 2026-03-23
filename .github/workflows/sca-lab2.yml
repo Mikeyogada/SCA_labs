@@ -1,6 +1,7 @@
 name: sca-lab2
 
 
+
 # SCA pipeline stages
 # 1. Manifest validation - no scanning
 # 2. Diff-aware dependency scan (PR) - pip-audit only on changed dependencies
@@ -127,7 +128,7 @@ jobs:
 
 
          echo "Running Trivy scan..."
-         trivy fs --format json --output "reports/trivy.json" . || {
+         trivy fs --scanners vuln --severity HIGH,CRITICAL --format json --output "reports/trivy.json" . || {
            echo "Trivy scan failed"
            exit 1
          }
@@ -142,7 +143,7 @@ jobs:
          echo "Evaluating vulnerability policy..."
 
 
-         HIGH_CRITICAL=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/trivy.json 2>/dev/null || echo 0)
+         HIGH_CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/trivy.json 2>/dev/null || echo 0)
 
 
          echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
@@ -163,13 +164,13 @@ jobs:
          echo "Running post-merge verification..."
 
 
-         trivy fs --format json --output "reports/post_merge_trivy.json" . || {
+         trivy fs --scanners vuln --severity HIGH,CRITICAL --format json --output "reports/post_merge_trivy.json" . || {
            echo "Trivy scan failed"
            exit 1
          }
 
 
-         HIGH_CRITICAL=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/post_merge_trivy.json 2>/dev/null || echo 0)
+         HIGH_CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/post_merge_trivy.json 2>/dev/null || echo 0)
 
 
          echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
@@ -199,7 +200,7 @@ jobs:
 
 
          echo "Running nightly Trivy scan..."
-         trivy fs --format json --output "nightly_reports/trivy.json" . || {
+         trivy fs --scanners vuln --severity HIGH,CRITICAL --format json --output "nightly_reports/trivy.json" . || {
            echo "Trivy scan failed"
            exit 1
          }
