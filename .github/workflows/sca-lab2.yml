@@ -49,18 +49,14 @@ jobs:
          python -m pip install --upgrade pip
          pip install pip-audit jq
 
+        # install trivy
+     - name: Install Trivy
+       run: |
+         curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh
+         sudo mv ./bin/trivy /usr/local/bin/
 
-         #install trivy for future use
-         sudo apt-get update
-         sudo apt-get install -y wget
-         TRIVY_VERSION=0.50.1
-         wget https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb
-         sudo dpkg -i trivy_${TRIVY_VERSION}_Linux-64bit.deb
-
-
-     - name: prepare trivy db
-       run: trivy fs --download-db-only
-
+         trivy --version
+         trivy fs --download-db-only
 
 # -----------------------------------
 # 1. Manifest validation
