@@ -1,0 +1,30 @@
+version: 2
+
+updates:
+- package-ecosystem: "pip"
+  directory: "/app/services/auth"
+  schedule:
+    interval: "daily"
+
+  open-pull-requests-limit: 5
+
+  labels:
+  - "dependencies"
+  - "security"
+
+  assignees:
+  - "Mikeyogada"
+
+- package-ecosystem: "pip"
+  directory: "/app/services/payments"
+  schedule:
+    interval: "daily"
+
+  open-pull-requests-limit: 5
+
+  labels:
+  - "dependencies"
+  - "security"
+
+  assignees:
+  - "Mikeyogada"
