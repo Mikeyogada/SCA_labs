@@ -49,12 +49,13 @@ jobs:
          python -m pip install --upgrade pip
          pip install pip-audit jq
 
-        # install trivy
+# install trivy
      - name: Install Trivy
        run: |
          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh
          sudo mv ./bin/trivy /usr/local/bin/
-
+     - name: Prepate Trivy DB
+       run: |
          trivy --version
          trivy fs --download-db-only
 
@@ -138,18 +139,36 @@ jobs:
        run: |
          echo "Evaluating vulnerability policy..."
 
-
+         TOTAL=$(jq '[.Results[]?.Vulnerabilities[]?] | length' reports/trivy.json 2>/dev/null || echo 0)
          HIGH_CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' reports/trivy.json 2>/dev/null || echo 0)
-
-
+         
+         echo "-------Summary-------"
+         echo "Total vulnerabilities: $TOTAL"
          echo "High + Critical vulnerabilities: $HIGH_CRITICAL"
+         
+         #-------- DETAILS REPORT --------
+         echo ""
+         echo "-------Detailed Vulnerability Report-------"
 
+         jq -r '
+          .Results[]?.Vulnerabilities[]? 
+          | select(.Severity=="HIGH" or .Severity=="CRITICAL") 
+          | "Package: \(.PkgName)
+          Version: \(.InstalledVersion)
+          CVE: \(.VulnerabilityID)
+          Severity: \(.Severity)
+          Description: \(.Description)
+          Fix: \(.FixedVersion // "No fix available")
+          ---"
+          ' reports/trivy.json 2>/dev/null || echo "No high or critical vulnerabilities found."
 
+         #---------Enforcement---------
          if [ "$HIGH_CRITICAL" -gt 0 ]; then
            echo "Blocking PR due to high or critical vulnerabilities"
            exit 1
+         else
+           echo "No high or critical vulnerabilities found. PR can be merged."
          fi
-
 
 # -----------------------------------
 # 5. Post-merge verification (main) - Trivy
