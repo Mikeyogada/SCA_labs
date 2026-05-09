@@ -1,0 +1,26 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>lab</groupId>
+  <artifactId>registry-control-lab</artifactId>
+  <version>1.0</version>
+  
+  <repositories>
+    <repository>
+      <id>evil-direct-maven</id>
+      <url>https://repo.maven.apache.org/maven2</url>
+    </repository>
+  </repositories>
+
+
+  <dependencies>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>4.13.2</version>
+    </dependency>
+  </dependencies>
+</project>
+
+<!-- pom.xml defines the dependencies and the version of the project -->
+<!-- groupid is the identifier of the project group, artifactid is the identifier of the project itself, version is the version of the project, dependencies section lists the dependencies required for the project, in this case it includes junit version 4.13.2 which is a testing framework for Java applications -->

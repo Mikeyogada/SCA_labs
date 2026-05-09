@@ -1,0 +1,10 @@
+{
+  "name": "registry-control-lab",
+  "version": "1.0.0",
+  "dependencies": { 
+    "lodash": "^4.17.21"
+  }
+}
+#define application name and version and dependencies used 
+#project is a node application that depends on lodash version 4.17.21 or higher, this file is used to manage the project's dependencies and metadata  
+
