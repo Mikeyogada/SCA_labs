@@ -1,0 +1,19 @@
+<settings>
+
+  <mirrors>
+    <mirror>
+      <id>internal</id>
+
+      <mirrorOf>*</mirrorOf>
+
+      <url>
+        http://localhost:8081/artifactory/maven-virtual
+      </url>
+
+    </mirror>
+  </mirrors>
+
+</settings>
+
+<!-- internal repo mirror configuration for maven, this configuration tells maven to use the specified mirror for all repository requests, the mirror is identified by its id and url, in this case it points to a local Artifactory instance running on port 8081 with a virtual repository named maven-virtual, this allows for control over which repositories are used for dependency resolution and can help ensure that only approved dependencies are used in the build process -->
+<!-- All dependencies resolution must go through the internal mirror -->
