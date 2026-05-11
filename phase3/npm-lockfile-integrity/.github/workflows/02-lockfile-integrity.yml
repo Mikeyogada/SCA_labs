@@ -1,0 +1,31 @@
+#workflow to validate lockfile exists and is deterministic
+name: 02-lockfile-integrity
+
+#workflow triggers on push and pull requests to the repository
+on: 
+    push:
+    pull_request:
+        
+#workflow has one job to enfore lockfile integrity
+jobs:
+    enforce-lockfile-integrity:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                node-version: '20'
+
+            - name: Verify lockfile exists
+              run: |
+                if [ ! -f package-lock.json ]; then
+                  echo "Error: package-lock.json not found!"
+                  exit 1
+                fi
+
+            - name: Enforce Deterministic dependencies
+              run: npm ci 
