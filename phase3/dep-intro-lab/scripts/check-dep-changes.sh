@@ -4,7 +4,7 @@ set -e #exit immediately if a command exits with a non-zero status
 
 echo "Checking for dependency introduction..."
 
-CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD) #return list of file names of the last 2 commits
 
 echo "Changed files:"
 echo "$CHANGED_FILES"
@@ -14,9 +14,9 @@ if echo "$CHANGED_FILES" | grep -q "package.json"; then #-q for quiet, returns 0
     echo "package.json has been modified. Checking for new dependencies..."
 
     #show added lines only
-    ADDED_LINES=$(git diff HEAD~1 HEAD -- package.json | grep '^+[^+]' || true) #lines starting with + but not ++
+    ADDED_LINES=$(git diff HEAD~1 HEAD -- package.json | grep '^+' || true) #lines starting with + but not ++
 
-    echo "Added lines:"
+    echo "Added lines :"
     echo "$ADDED_LINES"
 
     #detect dependency sections
