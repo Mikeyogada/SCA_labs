@@ -1,0 +1,33 @@
+name: 03-dependency-introduction
+
+on:
+    pull_request:
+    push:
+
+permissions:
+    contents: read #for reading repository-projects and other repo content
+
+jobs:
+    dependency-introduction-check:
+        runs-on: ubuntu-latest
+
+        steps:
+          - name: Checkout repository
+            uses: actions/checkout@v4
+            with:
+              fetch-depth: 0 #fetch the entire history of the repository, this is important for tools that need access to the full commit history (e.g., for generating SBOMs or analyzing code changes)
+
+          - name: Set up Node
+            uses: actions/setup-node@v4
+            with:
+              node-version: '23'
+
+#check for new dependencies in package.json, this is a simple check that looks for changes to the package.json file, in a real implementation, you would want to parse the package.json file and compare the dependencies before and after the change to identify new dependencies, this is just a placeholder to indicate where you would implement that logic
+          - name: make depencency script executable
+            run: chmod +x scripts/check-dep-changes.sh
+
+          
+          - name: run dependency check script
+            run: scripts/check-dep-changes.sh
+              
+ 
