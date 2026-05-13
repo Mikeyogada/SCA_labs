@@ -52,7 +52,7 @@ The GitHub Actions workflow:
 
 ## Dependency Detection Logic
 
-The script performs the following:
+The script performs the following :
 
 - Compares the latest commit against the previous commit
 - Detects changes to `package.json`

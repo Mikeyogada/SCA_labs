@@ -2,7 +2,11 @@ name: 03-dependency-introduction
 
 on:
     pull_request:
+      branches:
+          - dep-intro-testing
     push:
+      branches:
+          - dep-intro-testing
 
 permissions:
     contents: read #for reading repository-projects and other repo content

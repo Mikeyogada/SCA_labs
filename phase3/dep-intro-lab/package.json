@@ -1,5 +1,5 @@
 {
-  "name": "dependency-introduction-lab",
+  "name": "dependency-introduction-gate-lab",
   "version": "1.0.0",
   "dependencies": {
     "lodash": "4.17.21"
